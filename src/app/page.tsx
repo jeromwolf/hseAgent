@@ -7,18 +7,14 @@ import {
     ChevronRight,
     ChevronLeft,
     FileText,
-    TrendingUp,
-    Target,
     Users,
     Loader2,
-    Download,
     RotateCcw
 } from "lucide-react";
 import { IOSH_QUESTIONS, CATEGORIES } from "@/lib/questions";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { analyzeCompetency } from "./actions";
-import { generateAuditPDF } from "@/lib/pdf-generator";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -59,11 +55,10 @@ export default function Home() {
     const [step, setStep] = useState<number>(-1); // -1: Intro, 0~N: Assessment, 999: Result
     const [answers, setAnswers] = useState<Record<string, { score: number; evidence: string; selectedDesc: string; category: string }>>({});
     const [isAnalyzing, setIsAnalyzing] = useState(false);
-    const [isDownloading, setIsDownloading] = useState(false);
     const [aiReport, setAiReport] = useState("");
     const [aiError, setAiError] = useState("");
     const [cooldown, setCooldown] = useState(0);
-    const [isDebug, setIsDebug] = useState(true);
+    const isDev = process.env.NODE_ENV === 'development';
     const totalSteps = IOSH_QUESTIONS.length;
 
     const [shuffledIndices, setShuffledIndices] = useState<number[]>([]);
@@ -87,16 +82,63 @@ export default function Home() {
         setIsAnalyzing(true);
         setAiError("");
         try {
-            const dataStr = Object.entries(answers)
+            const vals = Object.values(answers);
+            const overallAvg = vals.length > 0 ? vals.reduce((acc, curr) => acc + curr.score, 0) / vals.length : 0;
+
+            // Category statistics
+            const catStats: Record<string, { avg: number; count: number; scores: number[] }> = {};
+            Object.keys(CATEGORIES).forEach((key) => {
+                const catAnswers = vals.filter(a => a.category === key);
+                const scores = catAnswers.map(a => a.score);
+                catStats[key] = {
+                    avg: scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0,
+                    count: scores.length,
+                    scores,
+                };
+            });
+
+            // Find strongest/weakest domains
+            const sortedCats = Object.entries(catStats).sort((a, b) => b[1].avg - a[1].avg);
+
+            // Score distribution
+            const distribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+            vals.forEach(v => { distribution[v.score] = (distribution[v.score] || 0) + 1; });
+
+            // Detailed question data with gap analysis
+            const questionDetails = Object.entries(answers)
                 .map(([id, ans]) => {
-                    const qIdx = IOSH_QUESTIONS.findIndex(q => q.id === id);
-                    const qTitle = qIdx !== -1 ? IOSH_QUESTIONS[qIdx].question : id;
-                    return `[항목: ${qTitle}]
-- 선택한 기준: ${ans.selectedDesc} (레벨 ${ans.score})
-- 제출한 증거: ${ans.evidence || "없음"}
-------------------`;
+                    const q = IOSH_QUESTIONS.find(q => q.id === id);
+                    const qTitle = q ? q.question : id;
+                    const category = q ? q.category : "Unknown";
+                    const subArea = q ? q.sub_area : "Unknown";
+                    const gap = 4 - ans.score;
+                    return `[${category} > ${subArea}] ${qTitle}
+- 선택 레벨: ${ans.score}/4 (${ans.selectedDesc})
+- GAP to Innovate: ${gap}단계
+- 증거: ${ans.evidence || "미제출"}`;
                 })
-                .join("\n");
+                .join("\n\n");
+
+            const dataStr = `=== QUANTITATIVE SUMMARY ===
+전체 평균 성숙도: ${overallAvg.toFixed(2)} / 4.00
+성숙도 등급: ${overallAvg >= 3.6 ? 'Innovate (혁신)' : overallAvg >= 2.6 ? 'Lead (리드)' : overallAvg >= 1.6 ? 'Implement (실행)' : 'Understand (이해)'}
+
+[카테고리별 분석]
+- Technical (기술 및 실무): ${catStats['Technical']?.avg.toFixed(2) || 'N/A'} / 4.00 (${catStats['Technical']?.count || 0}개 항목)
+- Core (비즈니스 및 핵심): ${catStats['Core']?.avg.toFixed(2) || 'N/A'} / 4.00 (${catStats['Core']?.count || 0}개 항목)
+- Behavioural (행동 및 리더십): ${catStats['Behavioural']?.avg.toFixed(2) || 'N/A'} / 4.00 (${catStats['Behavioural']?.count || 0}개 항목)
+
+최강 영역: ${sortedCats[0]?.[0]} (${sortedCats[0]?.[1].avg.toFixed(2)})
+최약 영역: ${sortedCats[sortedCats.length - 1]?.[0]} (${sortedCats[sortedCats.length - 1]?.[1].avg.toFixed(2)})
+
+[레벨 분포]
+- Level 1 (Understand): ${distribution[1]}개 항목 (${((distribution[1] / vals.length) * 100).toFixed(0)}%)
+- Level 2 (Implement): ${distribution[2]}개 항목 (${((distribution[2] / vals.length) * 100).toFixed(0)}%)
+- Level 3 (Lead): ${distribution[3]}개 항목 (${((distribution[3] / vals.length) * 100).toFixed(0)}%)
+- Level 4 (Innovate): ${distribution[4]}개 항목 (${((distribution[4] / vals.length) * 100).toFixed(0)}%)
+
+=== DETAILED ASSESSMENT DATA (12 Items) ===
+${questionDetails}`;
 
             const report = await analyzeCompetency(dataStr);
             if (report.includes("분석 요청이 너무 많습니다")) {
@@ -303,16 +345,62 @@ export default function Home() {
                                 </div>
 
                                 {/* MAIN AI CONTENT */}
-                                <div className="p-10 md:p-20 pt-16 bg-white prose prose-slate max-w-none 
-                                    prose-headings:text-[#00264d] prose-headings:font-black
-                                    prose-h2:text-2xl prose-h2:mt-16 prose-h2:mb-8 prose-h2:bg-slate-50 prose-h2:p-5 prose-h2:rounded-r-xl prose-h2:border-l-8 prose-h2:border-[#00264d]
-                                    prose-blockquote:border-l-4 prose-blockquote:border-[#fbbf24] prose-blockquote:bg-[#fefce8] prose-blockquote:p-10 prose-blockquote:rounded-r-2xl prose-blockquote:my-12
-                                    prose-blockquote:text-xl prose-blockquote:text-[#1e293b] prose-blockquote:italic
-                                    prose-p:text-lg prose-p:leading-[1.9] prose-p:text-slate-700
-                                    prose-li:text-lg prose-li:text-slate-700
-                                    prose-strong:text-[#00264d] prose-strong:font-bold
-                                    ">
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{aiReport}</ReactMarkdown>
+                                <div className="p-10 md:p-20 pt-16 bg-white max-w-none report-content">
+                                    <ReactMarkdown
+                                        remarkPlugins={[remarkGfm]}
+                                        components={{
+                                            h1: (props: any) => (
+                                                <h1 className="text-3xl font-black text-[#00264d] mt-12 mb-10 pb-4 border-b-2 border-[#00264d]" {...props} />
+                                            ),
+                                            h2: (props: any) => (
+                                                <h2 className="text-2xl font-black text-[#00264d] mt-14 mb-8 bg-slate-50 p-5 rounded-r-xl border-l-[6px] border-[#00264d]" {...props} />
+                                            ),
+                                            h3: (props: any) => (
+                                                <h3 className="text-xl font-bold text-[#1e3a5f] mt-10 mb-4" {...props} />
+                                            ),
+                                            h4: (props: any) => (
+                                                <h4 className="text-lg font-bold text-[#1e3a5f] mt-8 mb-3" {...props} />
+                                            ),
+                                            p: (props: any) => (
+                                                <p className="text-base leading-[1.9] text-slate-700 mb-4" {...props} />
+                                            ),
+                                            strong: (props: any) => (
+                                                <strong className="text-[#00264d] font-bold" {...props} />
+                                            ),
+                                            ul: (props: any) => (
+                                                <ul className="list-disc list-outside pl-6 space-y-2 my-4 text-base text-slate-700" {...props} />
+                                            ),
+                                            ol: (props: any) => (
+                                                <ol className="list-decimal list-outside pl-6 space-y-2 my-4 text-base text-slate-700" {...props} />
+                                            ),
+                                            li: (props: any) => (
+                                                <li className="leading-[1.8]" {...props} />
+                                            ),
+                                            blockquote: (props: any) => (
+                                                <blockquote className="border-l-4 border-[#fbbf24] bg-[#fefce8] p-8 rounded-r-2xl my-10 text-lg text-[#1e293b] italic" {...props} />
+                                            ),
+                                            hr: () => (
+                                                <hr className="my-12 border-slate-200" />
+                                            ),
+                                            table: (props: any) => (
+                                                <div className="overflow-x-auto my-8 rounded-xl border border-slate-200 shadow-sm">
+                                                    <table className="w-full border-collapse text-sm" {...props} />
+                                                </div>
+                                            ),
+                                            thead: (props: any) => (
+                                                <thead className="bg-[#00264d]" {...props} />
+                                            ),
+                                            th: (props: any) => (
+                                                <th className="px-5 py-4 text-left font-bold text-xs text-white uppercase tracking-wider" {...props} />
+                                            ),
+                                            td: (props: any) => (
+                                                <td className="px-5 py-4 border-b border-slate-100 text-slate-700 text-sm" {...props} />
+                                            ),
+                                            tr: (props: any) => (
+                                                <tr className="hover:bg-slate-50 transition-colors even:bg-slate-50/50" {...props} />
+                                            ),
+                                        }}
+                                    >{aiReport}</ReactMarkdown>
 
                                     <div className="mt-32 pt-16 border-t-2 border-slate-100 flex flex-col md:flex-row justify-between items-end gap-12">
                                         <div className="space-y-6">
@@ -332,32 +420,6 @@ export default function Home() {
                         )}
                     </div>
 
-                    <div className="mt-12 flex justify-center">
-                        <button
-                            disabled={isDownloading || isAnalyzing}
-                            className={cn(
-                                "btn-primary px-12 py-6 flex items-center gap-3 text-xl shadow-2xl transition-all",
-                                (isDownloading || isAnalyzing) ? "opacity-50 cursor-not-allowed" : "hover:scale-105"
-                            )}
-                            onClick={async () => {
-                                setIsDownloading(true);
-                                try {
-                                    await generateAuditPDF("HSE Specialist", status.label, avg, catAvgs, aiReport);
-                                } catch (err) {
-                                    alert("리포트 생성 중 오류가 발생했습니다. 브라우저 콘솔을 확인해 주세요.");
-                                } finally {
-                                    setIsDownloading(false);
-                                }
-                            }}
-                        >
-                            {isDownloading ? (
-                                <Loader2 className="w-6 h-6 animate-spin" />
-                            ) : (
-                                <Download className="w-6 h-6" />
-                            )}
-                            {isDownloading ? "리포트 생성 중..." : "전문 PDF 리포트 다운로드"}
-                        </button>
-                    </div>
                 </div>
             </div>
         );
@@ -393,7 +455,7 @@ export default function Home() {
                     <ShieldCheck className="w-6 h-6 text-brand-primary" /> IOSH <span className="text-brand-secondary">AUDIT</span>
                 </div>
                 <div className="flex items-center gap-6 text-sm font-bold">
-                    {isDebug && <button onClick={autoFill} className="hidden md:block px-3 py-1 bg-amber-100 text-amber-700 rounded-full">⚡ FAST-TRACK</button>}
+                    {isDev && <button onClick={autoFill} className="hidden md:block px-3 py-1 bg-amber-100 text-amber-700 rounded-full">⚡ FAST-TRACK</button>}
                     <div>STEP <span className="text-brand-primary text-xl">{step + 1}</span> / {totalSteps}</div>
                 </div>
             </nav>

@@ -1,12 +1,64 @@
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
+/**
+ * Tailwind CSS v4 uses lab()/oklch() color functions that html2canvas cannot parse.
+ * Fix: (1) strip unsupported color functions from cloned stylesheets,
+ *      (2) apply computed RGB inline styles to all cloned elements.
+ */
+
+function cacheComputedStyles(el: HTMLElement) {
+    const allElements = [el, ...Array.from(el.getElementsByTagName('*'))];
+    return allElements.map(e => {
+        const cs = window.getComputedStyle(e);
+        return {
+            color: cs.color,
+            backgroundColor: cs.backgroundColor,
+            borderColor: cs.borderColor,
+            borderTopColor: cs.borderTopColor,
+            borderBottomColor: cs.borderBottomColor,
+            borderLeftColor: cs.borderLeftColor,
+            borderRightColor: cs.borderRightColor,
+            outlineColor: cs.outlineColor,
+        };
+    });
+}
+
+type StyleCache = ReturnType<typeof cacheComputedStyles>;
+
+function applyToClone(clonedDoc: Document, clonedEl: HTMLElement, cache: StyleCache) {
+    // Step 1: Strip lab()/oklch()/oklab()/lch() from ALL stylesheets in the cloned document
+    clonedDoc.querySelectorAll('style').forEach(style => {
+        if (style.textContent) {
+            style.textContent = style.textContent.replace(
+                /(?:lab|oklch|oklab|lch)\([^)]*\)/gi,
+                'transparent'
+            );
+        }
+    });
+
+    // Step 2: Apply cached computed RGB colors as inline styles (overrides everything)
+    const allCloned = [clonedEl, ...Array.from(clonedEl.getElementsByTagName('*'))];
+    for (let i = 0; i < cache.length && i < allCloned.length; i++) {
+        const ce = allCloned[i] as HTMLElement;
+        const s = cache[i];
+        ce.style.color = s.color;
+        ce.style.backgroundColor = s.backgroundColor;
+        ce.style.borderColor = s.borderColor;
+        ce.style.borderTopColor = s.borderTopColor;
+        ce.style.borderBottomColor = s.borderBottomColor;
+        ce.style.borderLeftColor = s.borderLeftColor;
+        ce.style.borderRightColor = s.borderRightColor;
+        ce.style.outlineColor = s.outlineColor;
+    }
+}
+
 export const generateAuditPDF = async (
     candidateName: string,
-    overallLevel: string,
-    avgScore: number,
-    categoryScores: Record<string, number>,
-    aiReport: string
+    _overallLevel: string,
+    _avgScore: number,
+    _categoryScores: Record<string, number>,
+    _aiReport: string
 ) => {
     console.log("[Audit PDF] Segmented Safe-Mode Start...");
 
@@ -17,41 +69,41 @@ export const generateAuditPDF = async (
     }
 
     try {
-        // 1. 아주 긴 문서도 견딜 수 있도록 분할 캡처 로직 준비
         const doc = new jsPDF('p', 'mm', 'a4');
         const pageWidth = 210;
-        const pageHeight = 297;
 
-        // 브라우저 부하를 최소화하는 1.0 배율 사용
-        const scale = 1.0;
+        const scale = 1.5;
         const widthPx = el.offsetWidth;
         const totalHeightPx = el.scrollHeight;
 
-        // A4 비율에 맞춘 페이지당 픽셀 높이 (약 1.41배)
         const pxPerPage = Math.floor(widthPx * 1.414);
         const totalPages = Math.ceil(totalHeightPx / pxPerPage);
 
         console.log(`[PDF] Total segments to capture: ${totalPages}`);
+
+        // Cache computed RGB styles once (getComputedStyle always returns rgb/rgba)
+        const styleCache = cacheComputedStyles(el);
 
         for (let i = 0; i < totalPages; i++) {
             if (i > 0) doc.addPage();
 
             const currentY = i * pxPerPage;
 
-            // 핵심: 전체를 찍지 않고 해당 구간만 정밀 캡처
             const canvas = await html2canvas(el, {
-                scale: scale,
+                scale,
                 useCORS: true,
                 logging: false,
                 backgroundColor: '#ffffff',
                 y: currentY,
                 height: Math.min(pxPerPage, totalHeightPx - currentY),
                 width: widthPx,
-                windowWidth: widthPx
+                windowWidth: widthPx,
+                onclone: (clonedDoc: Document, clonedEl: HTMLElement) => {
+                    applyToClone(clonedDoc, clonedEl, styleCache);
+                },
             });
 
             const imgData = canvas.toDataURL('image/jpeg', 0.85);
-            // 페이지에 맞게 이미지 삽입 (마지막 페이지는 높이 조절)
             const drawHeight = (canvas.height * pageWidth) / canvas.width;
             doc.addImage(imgData, 'JPEG', 0, 0, pageWidth, drawHeight, undefined, 'FAST');
         }
@@ -60,8 +112,7 @@ export const generateAuditPDF = async (
         console.log("[Audit PDF] Success.");
 
     } catch (err) {
-        console.error("[Audit PDF] Memory error, switching to Print Mode.", err);
-        // 모든 시스템이 실패할 경우를 대비한 최후의 보루: 인쇄 모드
+        console.error("[Audit PDF] Error, switching to Print Mode.", err);
         alert("전문 리포트 생성을 위해 브라우저의 전용 PDF 엔진을 호출합니다.\n\n[확인]을 누르신 후 인쇄 창에서 'PDF로 저장'을 선택해 주세요.");
         window.print();
     }

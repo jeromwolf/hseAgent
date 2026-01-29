@@ -31,3 +31,43 @@ body {
   --color-brand-accent: #10b981;
   --color-brand-bg: #f8fafc;
 }
+
+/* Report content fallback styles */
+.report-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  margin: 2rem 0;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.report-content thead {
+  background-color: #00264d;
+}
+
+.report-content th {
+  padding: 1rem 1.25rem;
+  text-align: left;
+  font-weight: 700;
+  font-size: 0.7rem;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.report-content td {
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+}
+
+.report-content tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+.report-content tbody tr:nth-child(even) {
+  background-color: #fafbfc;
+}
