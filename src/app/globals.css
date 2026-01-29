@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+:root {
+  --foreground-rgb: 15, 23, 42;
+  --background-start-rgb: 255, 255, 255;
+  --background-end-rgb: 248, 250, 252;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))) rgb(var(--background-start-rgb));
+  min-height: 100vh;
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-xl rounded-3xl;
+  }
+
+  .btn-primary {
+    @apply bg-brand-primary text-white px-8 py-3 rounded-xl font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] hover:shadow-lg disabled:opacity-50 disabled:scale-100;
+  }
+}
+
+/* Custom mapping for brand colors in v4 since we don't have a classic theme config easily merged here yet */
+@theme {
+  --color-brand-primary: #003366;
+  --color-brand-secondary: #c5a059;
+  --color-brand-accent: #10b981;
+  --color-brand-bg: #f8fafc;
+}
