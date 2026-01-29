@@ -14,6 +14,11 @@
 - **방탄 PDF 생성 시스템**: 한글 깨짐 방지 및 아주 긴 리포트도 안정적으로 저장하는 분할 캡처(Segmented Canvas) 기술 적용.
 - **멀티 엔진 폴백(Fallback)**: 특정 API 장애 시 다른 AI 엔진으로 즉시 전환되는 고가용성 분석 서비스.
 
+## 📚 공식 레퍼런스 (Official Reference)
+
+이 시스템은 다음의 공식 IOSH 역량 프레임워크 가이드를 준수하여 개발되었습니다:
+- [IOSH Competency Framework Official Guidance](https://iosh.com/guidance-and-resources/professionals/competency-framework)
+
 ## 🛠️ 기술 스택 (Tech Stack)
 
 - **Framework**: [Next.js](https://nextjs.org/) (App Router)
